@@ -1,9 +1,10 @@
 ﻿using UnityEngine;
 using UnityEngine.UI;
+using Unity.Netcode;
 
 namespace Tanks.Complete
 {
-    public class TankHealth : MonoBehaviour
+    public class TankHealth : NetworkBehaviour
     {
         public float m_StartingHealth = 100f;               // The amount of health each tank starts with.
         public Slider m_Slider;                             // The slider to represent how much health the tank currently has.
@@ -16,7 +17,9 @@ namespace Tanks.Complete
         
         private AudioSource m_ExplosionAudio;               // The audio source to play when the tank explodes.
         private ParticleSystem m_ExplosionParticles;        // The particle system the will play when the tank is destroyed.
-        private float m_CurrentHealth;                      // How much health the tank currently has.
+        private NetworkVariable<float> m_CurrentHealth = new NetworkVariable<float>(0f,
+                                                NetworkVariableReadPermission.Everyone,
+                                                NetworkVariableWritePermission.Server);
         private bool m_Dead;                                // Has the tank been reduced beyond zero health yet?
         private float m_ShieldValue;                        // Percentage of reduced damage when the tank has a shield.
         private bool m_IsInvincible;                        // Is the tank invincible in this moment?
@@ -36,6 +39,33 @@ namespace Tanks.Complete
             m_Slider.maxValue = m_StartingHealth;
         }
 
+        public override void OnNetworkSpawn()
+        {
+            if (IsClient)
+            {
+                m_CurrentHealth.OnValueChanged += OnHealthChanged;
+            }
+
+            if (IsServer)
+            {
+                m_CurrentHealth.Value = m_StartingHealth;
+            }
+            OnHealthChanged(m_CurrentHealth.Value, m_CurrentHealth.Value);
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            if (IsClient)
+            {
+                m_CurrentHealth.OnValueChanged -= OnHealthChanged;
+            }
+        }
+
+        private void OnHealthChanged(float previousValue, float newValue)
+        {
+            SetHealthUI();
+        }
+
         private void OnDestroy()
         {
             if(m_ExplosionParticles != null)
@@ -45,7 +75,10 @@ namespace Tanks.Complete
         private void OnEnable()
         {
             // When the tank is enabled, reset the tank's health and whether or not it's dead.
-            m_CurrentHealth = m_StartingHealth;
+            if (IsServer)
+            {
+                m_CurrentHealth.Value = m_StartingHealth;
+            }
             m_Dead = false;
             m_HasShield = false;
             m_ShieldValue = 0;
@@ -62,13 +95,14 @@ namespace Tanks.Complete
             if (!m_IsInvincible)
             {
                 // Reduce current health by the amount of damage done.
-                m_CurrentHealth -= amount * (1 - m_ShieldValue);
+                if (IsServer)
+                    m_CurrentHealth.Value -= amount * (1 - m_ShieldValue);
 
                 // Change the UI elements appropriately.
                 SetHealthUI ();
 
                 // If the current health is at or below zero and it has not yet been registered, call OnDeath.
-                if (m_CurrentHealth <= 0f && !m_Dead)
+                if (m_CurrentHealth.Value <= 0f && !m_Dead)
                 {
                     OnDeath ();
                 }
@@ -79,15 +113,17 @@ namespace Tanks.Complete
         public void IncreaseHealth(float amount)
         {
             // Check if adding the amount would keep the health within the maximum limit
-            if (m_CurrentHealth + amount <= m_StartingHealth)
+            if (m_CurrentHealth.Value + amount <= m_StartingHealth)
             {
                 // If the new health value is within the limit, add the amount
-                m_CurrentHealth += amount;
+                if (IsServer)
+                    m_CurrentHealth.Value += amount;
             }
             else
             {
                 // If the new health exceeds the starting health, set it at the maximum
-                m_CurrentHealth = m_StartingHealth;
+                if (IsServer)
+                    m_CurrentHealth.Value = m_StartingHealth;
             }
 
             // Change the UI elements appropriately.
@@ -120,10 +156,10 @@ namespace Tanks.Complete
         private void SetHealthUI ()
         {
             // Set the slider's value appropriately.
-            m_Slider.value = m_CurrentHealth;
+            m_Slider.value = m_CurrentHealth.Value;
 
             // Interpolate the color of the bar between the choosen colours based on the current percentage of the starting health.
-            m_FillImage.color = Color.Lerp (m_ZeroHealthColor, m_FullHealthColor, m_CurrentHealth / m_StartingHealth);
+            m_FillImage.color = Color.Lerp (m_ZeroHealthColor, m_FullHealthColor, m_CurrentHealth.Value / m_StartingHealth);
         }
 
 

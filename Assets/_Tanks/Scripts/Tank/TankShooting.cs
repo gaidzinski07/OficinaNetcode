@@ -1,10 +1,11 @@
-﻿using UnityEngine;
+﻿using Unity.Netcode;
+using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 namespace Tanks.Complete
 {
-    public class TankShooting : MonoBehaviour
+    public class TankShooting : NetworkBehaviour
     {
         public Rigidbody m_Shell;                   // Prefab of the shell.
         public Transform m_FireTransform;           // A child of the tank where the shells are spawned.
@@ -113,7 +114,7 @@ namespace Tanks.Complete
         {
             if (m_IsCharging)
             {
-                Fire();
+                FireRpc();
                 m_IsCharging = false;
             }
         }
@@ -128,7 +129,7 @@ namespace Tanks.Complete
             {
                 // ... use the max force and launch the shell.
                 m_CurrentLaunchForce = m_MaxLaunchForce;
-                Fire ();
+                FireRpc ();
             }
             // Otherwise, if the fire button is being held and the shell hasn't been launched yet...
             else if (m_IsCharging && !m_Fired)
@@ -142,7 +143,7 @@ namespace Tanks.Complete
             else if (fireAction.WasReleasedThisFrame() && !m_Fired)
             {
                 // ... launch the shell.
-                Fire ();
+                FireRpc ();
                 m_IsCharging = false;
             }
         }
@@ -163,7 +164,7 @@ namespace Tanks.Complete
             {
                 // ... use the max force and launch the shell.
                 m_CurrentLaunchForce = m_MaxLaunchForce;
-                Fire ();
+                FireRpc ();
             }
             // Otherwise, if the fire button has just started being pressed...
             else if (m_ShotCooldownTimer <= 0 && fireAction.WasPressedThisFrame())
@@ -188,12 +189,12 @@ namespace Tanks.Complete
             else if (fireAction.WasReleasedThisFrame() && !m_Fired)
             {
                 // ... launch the shell.
-                Fire ();
+                FireRpc ();
             }
         }
 
-
-        private void Fire ()
+        [Rpc(target: SendTo.Everyone)]
+        public void FireRpc ()
         {
             // Set the fired flag so only Fire is only called once.
             m_Fired = true;

@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System.Linq;
+using UnityEngine;
 
 namespace Tanks.Complete
 {
@@ -38,6 +39,8 @@ namespace Tanks.Complete
 
         private void FixedUpdate ()
         {
+            m_Targets = GameObject.FindGameObjectsWithTag("Player").Select(t => t.transform).ToArray();
+
             // Move the camera towards a desired position.
             Move ();
 

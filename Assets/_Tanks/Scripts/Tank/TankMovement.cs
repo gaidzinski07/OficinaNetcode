@@ -1,13 +1,14 @@
 ﻿using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Users;
+using Unity.Netcode;
 
 namespace Tanks.Complete
 {
     //Ensure it run before the TankShooting component as TankShooting grabs the InputUser from this when there are no
     //GameManager set (used during learning experience to test tank in empty scenes)
     [DefaultExecutionOrder(-10)]
-    public class TankMovement : MonoBehaviour
+    public class TankMovement : NetworkBehaviour
     {
         [Tooltip("The player number. Without a tank selection menu, Player 1 is left keyboard control, Player 2 is right keyboard")]
         public int m_PlayerNumber = 1;              // Used to identify which tank belongs to which player.  This is set by this tank's manager.
@@ -226,52 +227,77 @@ namespace Tanks.Complete
 
         private void Move ()
         {
-            float speedInput = 0.0f;
-            
-            // In direct control mode, the speed will depend on how far from the desired direction we are
-            if (m_InputUser.InputUser.controlScheme.Value.name == "Gamepad" || m_IsDirectControl)
+            if (IsOwner)
             {
-                speedInput = m_RequestedDirection.magnitude;
-                //if we are direct control, the speed of the move is based angle between current direction and the wanted
-                //direction. If under 90, full speed, then speed reduced between 90 and 180
-                speedInput *= 1.0f - Mathf.Clamp01((Vector3.Angle(m_RequestedDirection, transform.forward) - 90) / 90.0f);
-            }
-            else
-            {
-                // in normal "tank control" the speed value is how much we press "up/forward"
-                speedInput = m_MovementInputValue;
-            }
+                float speedInput = 0.0f;
             
-            // Create a vector in the direction the tank is facing with a magnitude based on the input, speed and the time between frames.
-            Vector3 movement = transform.forward * speedInput * m_Speed;
-
-            // Apply this movement to the rigidbody's position.
-            m_Rigidbody.linearVelocity = movement + m_ExplosionForceValue;
-            m_ExplosionForceValue = Vector3.Lerp(m_ExplosionForceValue, Vector3.zero, Time.deltaTime * 3f); // 3f = braking speed
+                // In direct control mode, the speed will depend on how far from the desired direction we are
+                if (m_InputUser.InputUser.controlScheme.Value.name == "Gamepad" || m_IsDirectControl)
+                {
+                    speedInput = m_RequestedDirection.magnitude;
+                    //if we are direct control, the speed of the move is based angle between current direction and the wanted
+                    //direction. If under 90, full speed, then speed reduced between 90 and 180
+                    speedInput *= 1.0f - Mathf.Clamp01((Vector3.Angle(m_RequestedDirection, transform.forward) - 90) / 90.0f);
+                }
+                else
+                {
+                    // in normal "tank control" the speed value is how much we press "up/forward"
+                    speedInput = m_MovementInputValue;
+                }
+                        
+                //Solicita ao servidor que mova o tanque
+                MoveRpc(speedInput);
+            }
         }
 
+        [Rpc(target:SendTo.Server)]
+        public void MoveRpc(float speedInput)
+        {
+            if (IsServer)
+            {
+                // Create a vector in the direction the tank is facing with a magnitude based on the input, speed and the time between frames.
+                Vector3 movement = transform.forward * speedInput * m_Speed;
+
+                // Apply this movement to the rigidbody's position.
+                m_Rigidbody.linearVelocity = movement + m_ExplosionForceValue;
+                m_ExplosionForceValue = Vector3.Lerp(m_ExplosionForceValue, Vector3.zero, Time.deltaTime * 3f); // 3f = braking speed
+            }
+
+        }
 
         private void Turn ()
         {
-            Quaternion turnRotation;
-            // If in direct control...
-            if (m_InputUser.InputUser.controlScheme.Value.name == "Gamepad" || m_IsDirectControl)
+            if (IsOwner)
             {
-                // Compute the rotation needed to reach the desired direction
-                float angleTowardTarget = Vector3.SignedAngle(m_RequestedDirection, transform.forward, transform.up);
-                var rotatingAngle = Mathf.Sign(angleTowardTarget) * Mathf.Min(Mathf.Abs(angleTowardTarget), m_TurnSpeed * Time.deltaTime);
-                turnRotation = Quaternion.AngleAxis(-rotatingAngle, Vector3.up);
+                Quaternion turnRotation;
+                // If in direct control...
+                if (m_InputUser.InputUser.controlScheme.Value.name == "Gamepad" || m_IsDirectControl)
+                {
+                    // Compute the rotation needed to reach the desired direction
+                    float angleTowardTarget = Vector3.SignedAngle(m_RequestedDirection, transform.forward, transform.up);
+                    var rotatingAngle = Mathf.Sign(angleTowardTarget) * Mathf.Min(Mathf.Abs(angleTowardTarget), m_TurnSpeed * Time.deltaTime);
+                    turnRotation = Quaternion.AngleAxis(-rotatingAngle, Vector3.up);
+                }
+                else
+                {
+                    float turn = m_TurnInputValue * m_TurnSpeed * Time.deltaTime;
+
+                    // Make this into a rotation in the y axis.
+                    turnRotation = Quaternion.Euler (0f, turn, 0f);
+                }
+
+                TurnRpc(turnRotation);
             }
-            else
+        }
+
+        [Rpc(target:SendTo.Server)]
+        public void TurnRpc(Quaternion turnRotation)
+        {
+            if (IsServer)
             {
-                float turn = m_TurnInputValue * m_TurnSpeed * Time.deltaTime;
-
-                // Make this into a rotation in the y axis.
-                turnRotation = Quaternion.Euler (0f, turn, 0f);
+                
+                m_Rigidbody.MoveRotation(m_Rigidbody.rotation * turnRotation);
             }
-
-            // Apply this rotation to the rigidbody's rotation.
-            m_Rigidbody.MoveRotation (m_Rigidbody.rotation * turnRotation);
         }
 
         public void AddExplosionForce(float explosionForce, Vector3 explosionPosition, float explosionRadius, float upwardsModifier = 0f)
