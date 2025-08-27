@@ -104,7 +104,7 @@ namespace Tanks.Complete
                 // If the current health is at or below zero and it has not yet been registered, call OnDeath.
                 if (m_CurrentHealth.Value <= 0f && !m_Dead)
                 {
-                    OnDeath ();
+                    OnDeathRpc ();
                 }
             }
         }
@@ -162,8 +162,8 @@ namespace Tanks.Complete
             m_FillImage.color = Color.Lerp (m_ZeroHealthColor, m_FullHealthColor, m_CurrentHealth.Value / m_StartingHealth);
         }
 
-
-        private void OnDeath ()
+        [Rpc(target: SendTo.Everyone)]
+        private void OnDeathRpc ()
         {
             // Set the flag so that this function is only called once.
             m_Dead = true;
